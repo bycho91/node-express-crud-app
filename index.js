@@ -1,49 +1,38 @@
-const { json, application } = require("express");
 const express = require("express");
-const CryptoJS = require("crypto-js");
 const dotenv = require("dotenv");
-const jwt = require("jsonwebtoken");
+const CryptoJS = require("crypto-js");
 const { v4: uuidv4 } = require("uuid");
-
+const jwt = require("jsonwebtoken");
 dotenv.config();
 
 const app = express();
 app.use(express.json());
-
-// empty array to persist the users data
 const users = [];
 
-// REGISTER
+// CREATE - REGISTER
 app.post("/api/register", (req, res) => {
-  //validate username, password, email is given
-  if (
-    req.body.username == "" ||
-    req.body.password == "" ||
-    req.body.email == ""
-  )
-    res.status(400).json("Please fill out all information");
-  else {
-    // body -> username, password
-
-    // create new user
+  if (req.body.username && req.body.email && req.body.password) {
     const newUser = {
       id: uuidv4(),
       username: req.body.username,
+      email: req.body.email,
       password: CryptoJS.AES.encrypt(
         req.body.password,
         process.env.SEC
       ).toString(),
-      email: req.body.email,
       isAdmin: req.body.isAdmin || false,
     };
 
-    //take the new user and push to users array
     users.push(newUser);
-    res.status(200).json(`${newUser.username} has been created`);
+    res.status(200).json(`${newUser.username} has been added!`);
+  } else {
+    res
+      .status(400)
+      .json("Please fill out all information[username, password, email]");
   }
 });
 
-// GET all users
+// READ - Get All Users
 app.get("/api/users", async (req, res) => {
   const allUsers = await users.map((user) => ({
     id: user.id,
@@ -52,11 +41,23 @@ app.get("/api/users", async (req, res) => {
     isAdmin: user.isAdmin,
   }));
 
-  if (!allUsers) res.status(400).json("No users found in database");
+  if (allUsers.length < 1) res.json("No users in the database");
   else res.status(200).json(allUsers);
 });
 
-// LOGIN USER
+// READ - Get a particular user
+app.get("/api/users/:username", async (req, res) => {
+  const user = users.find((user) => user.username === req.params.username);
+  if (!user) res.status(400).json("User not found in database");
+  else
+    res.status(200).json({
+      username: user.username,
+      email: user.email,
+      isAdmin: user.isAdmin,
+    });
+});
+
+// LOGIN - give access token with JWT
 app.post("/api/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -68,22 +69,21 @@ app.post("/api/login", async (req, res) => {
         ) === password
     );
 
-    if (!user) res.status(400).json("Credentials invalid");
+    if (!user) res.status(400).json("Invalid Credentials");
     else {
-      //create an access token using jwt
       const accessToken = jwt.sign(
         {
           id: user.id,
-          username: user.username,
           isAdmin: user.isAdmin,
         },
         process.env.SEC,
-        { expiresIn: "2d" }
+        { expiresIn: "3d" }
       );
 
       res.status(200).json({
-        username: user.username,
         id: user.id,
+        username: user.username,
+        email: user.email,
         isAdmin: user.isAdmin,
         accessToken,
       });
@@ -93,11 +93,11 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// Verify User
-const verifyUser = async (req, res, next) => {
+// DELETE
+const verifyUser = (req, res, next) => {
   const authHeader = req.headers.token;
   if (!authHeader) {
-    return res.status(400).json("Token not passed");
+    res.status(400).json("Token not passed");
   } else {
     const token = authHeader.split(" ")[1];
     jwt.verify(token, process.env.SEC, (err, payload) => {
@@ -110,22 +110,18 @@ const verifyUser = async (req, res, next) => {
   }
 };
 
-// DELETE USER
-app.delete("/api/users/:userId", verifyUser, (req, res) => {
+app.delete("/api/users/:userId", verifyUser, async (req, res) => {
   if (req.user.id === req.params.userId || req.user.isAdmin) {
     users.forEach((user) => {
-      if (user.id === req.params.userId) {
-        users.splice(users.indexOf(user.id));
-      }
+      if (user.id === req.params.userId)
+        users.splice(users.indexOf(req.params.userId));
     });
-    res.status(200).json(`User ${req.params.userId} has been deleted`);
+    res.status(200).json(`USER has been deleted`);
   } else {
     res.status(403).json("You are not permitted to delete this user");
   }
 });
 
-//////////////////////////////////////////////////////////////////////////
-
-app.listen(5000, () => {
-  console.log("SERVER STARTED");
-});
+////////////////////////////////////////////////
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`SERVER STARTED ON PORT ${PORT}`));
